@@ -1,0 +1,2 @@
+# nlp-services-standalone
+Pretrained_ZeroShot_Multitask_Container
