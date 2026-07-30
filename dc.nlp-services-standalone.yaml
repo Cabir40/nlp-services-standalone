@@ -1,0 +1,61 @@
+services:
+  nlp-services-standalone:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - spark_nlp_secret
+      args:
+        PYSPARK_VERSION: 3.4.0
+        SPARK_NLP_VERSION: 6.4.2
+    environment:
+      # One model per container -- PretrainedZeroShotMultiTask cannot be loaded twice per JVM.
+      # A request for any other model_id is rejected with 422.
+      - MULTITASK_MODEL_ID=zeroshot_multitask_base
+      - PUBLIC_URL=http://localhost:5002
+      - LICENSE_FILE_PATH=/tmp/license/license.json
+      - PRETRAINED_CACHE_FOLDER=/root/cache_pretrained
+      # Sessions, results and logs are in-memory only; this bounds how many are kept.
+      - SESSION_HISTORY_LIMIT=50
+      # ES is only needed for `document_ids` input; inline `documents` work without it.
+      - ES_ENABLED=true
+      - ES_URL=http://pj-nosql:9200
+      - ES_USER=admin
+      - ES_PASSWORD=admin@123
+      - INPUT_INDEX=raw_extractions
+      - RESULTS_ES_WRITE=false
+      - RESULTS_INDEX=custom_nlp_results
+    volumes:
+      - ./app:/app
+      - /home/ubuntu/cabir/keys/6.4.1.spark_nlp_for_healthcare.json:/tmp/license/license.json:ro
+      # The JVM resolves user.home=/root under JDK 8 (despite HOME=/app), so spark-nlp caches
+      # models here. Mounting the host cache reuses models already downloaded by the notebooks
+      # instead of re-fetching ~800MB on every restart.
+      - /home/ubuntu/cache_pretrained:/root/cache_pretrained
+    ports:
+      - "8510:8510"   # externally accessible on port 8510
+    restart: unless-stopped
+    networks:
+      - omop-app-network
+
+  # Serving the generic model means a SECOND container -- one model per JVM. Uncomment to run
+  # both, but check host RAM first: each wants an 8g Spark driver.
+  #
+  # nlp-services-standalone-generic:
+  #   extends:
+  #     service: nlp-services-standalone
+  #   environment:
+  #     - MULTITASK_MODEL_ID=zeroshot_multitask_generic
+  #     - PUBLIC_URL=http://localhost:5003
+  #   ports:
+  #     - "5003:5000"
+
+secrets:
+  spark_nlp_secret:
+    environment: SPARK_NLP_SECRET
+
+networks:
+  omop-app-network:
+    name: omop-app-network
+    driver: bridge
+    external: true
